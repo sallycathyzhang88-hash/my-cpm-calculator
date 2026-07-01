@@ -46,37 +46,50 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 核心智能文本清洗模块（解决脏数据 Bug）
+# 1. 核心智能文本清洗与多平台拆分模块
 # ==========================================
-def clean_and_convert_num(text_val):
+def parse_platform_value(text_val, preference):
     """
-    终极清洗函数：把 ' $15,000 ', ' 23.5K ', ' 1.2M ', ' 500 USD ' 统一清洗成标准数字 float
+    智能拆分清洗函数：
+    支持 'IG 1100, TT600' 或 'IG: $200 / TT: $500'
+    根据 preference ('TT', 'IG', 'YT') 提取对应平台的纯数字，并转换 K/M 单位
     """
     if pd.isna(text_val):
         return 0.0
     
-    # 转为字符串并去掉两端空格，转大写
     val_str = str(text_val).strip().upper()
-    
     if not val_str:
         return 0.0
         
-    try:
-        # 1. 检查有没有带 K、M 等社媒常用缩写单位
-        multiplier = 1.0
-        if 'K' in val_str:
-            multiplier = 1000.0
-            val_str = val_str.replace('K', '')
-        elif 'M' in val_str:
-            multiplier = 1000000.0
-            val_str = val_str.replace('M', '')
+    # 匹配标识
+    pattern_map = {
+        'TT': [r'TT[:\s]*([0-9\.,]+[KM]?)', r'TIKTOK[:\s]*([0-9\.,]+[KM]?)'],
+        'IG': [r'IG[:\s]*([0-9\.,]+[KM]?)', r'INS[:\s]*([0-9\.,]+[KM]?)', r'INSTAGRAM[:\s]*([0-9\.,]+[KM]?)'],
+        'YT': [r'YT[:\s]*([0-9\.,]+[KM]?)', r'YTB[:\s]*([0-9\.,]+[KM]?)', r'YOUTUBE[:\s]*([0-9\.,]+[KM]?)']
+    }
+    
+    target_text = None
+    for pattern in pattern_map.get(preference, []):
+        match = re.search(pattern, val_str)
+        if match:
+            target_text = match.group(1)
+            break
             
-        # 2. 剥离掉所有非数字、非小数点的杂质（比如 $, ￥, USD, 逗号）
-        cleaned_str = re.sub(r'[^\d\.]', '', val_str)
-        
+    if not target_text:
+        target_text = val_str
+
+    try:
+        multiplier = 1.0
+        if 'K' in target_text:
+            multiplier = 1000.0
+            target_text = target_text.replace('K', '')
+        elif 'M' in target_text:
+            multiplier = 1000000.0
+            target_text = target_text.replace('M', '')
+            
+        cleaned_str = re.sub(r'[^\d\.]', '', target_text)
         if not cleaned_str:
             return 0.0
-            
         return float(cleaned_str) * multiplier
     except Exception:
         return 0.0
@@ -93,14 +106,14 @@ def calc_budget(views, cpm):
 col_logo, col_title = st.columns([1, 15])
 with col_title:
     st.markdown("# 📈 全球社媒 CPM 智能规划看板")
-    st.markdown("<p style='color:#64748B; font-size:15px; margin-top:-10px;'>跨平台传播成本双向测算系统 · 内置脏数据智能清洗 Pipeline</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#64748B; font-size:15px; margin-top:-10px;'>跨平台传播成本双向测算系统 · 支持双向双字段全清洗</p>", unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ==========================================
 # 3. 核心功能标签页 (Tabs)
 # ==========================================
-tab1, tab2 = st.tabs(["🎯 单测 · 智能链路透视", "📂 批处理 · 智能清洗大表"])
+tab1, tab2 = st.tabs(["🎯 单测 · 智能链路透视", "📂 批处理 · 混合数据清洗表"])
 
 # ----- TAB 1: 快捷单测 -----
 with tab1:
@@ -116,22 +129,22 @@ with tab1:
             )
             
             st.markdown("<br>", unsafe_allow_html=True)
-            # 单次测算也支持输入带文字的数据
-            raw_views_input = st.text_input("👁️ 预估平均播放量 (支持输入 15k, 1.2M, 25,000 等)", value="25,000")
-            views = clean_and_convert_num(raw_views_input)
+            single_pref = st.selectbox("🎯 单测平台数据提取偏好：", ["TT", "IG", "YT"], index=0)
+            
+            raw_views_input = st.text_input("👁️ 预估平均播放量", value="IG 1100, TT600")
+            views = parse_platform_value(raw_views_input, single_pref)
             
             if "求 CPM" in calc_type:
-                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD 等)", value="$500")
-                price = clean_and_convert_num(raw_price_input)
+                raw_price_input = st.text_input("💰 达人合作报价", value="IG: $200, TT: $500")
+                price = parse_platform_value(raw_price_input, single_pref)
             else:
-                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20 等)", value="$20")
-                target_cpm = clean_and_convert_num(raw_cpm_input)
+                raw_cpm_input = st.text_input("🎯 目标期望 CPM", value="$20")
+                target_cpm = parse_platform_value(raw_cpm_input, single_pref)
                     
         with col_right:
             st.markdown("### 📊 测算交付结果")
-            st.write(f"⚙️ *系统识别到真实计算数据 ➔ 均播: **{views:,.0f}** | 价格/CPM: **{price if '求 CPM' in calc_type else target_cpm:,.2f}***")
-            
             if "求 CPM" in calc_type:
+                st.write(f"⚙️ *系统识别 ➔ 清洗后【{single_pref}】均播: **{views:,.0f}** | 清洗后【{single_pref}】价格: **${price:,.2f}***")
                 res_cpm = calc_cpm(views, price)
                 st.markdown(f"""
                     <div class="metric-card">
@@ -140,6 +153,7 @@ with tab1:
                     </div>
                 """, unsafe_allow_html=True)
             else:
+                st.write(f"⚙️ *系统识别 ➔ 清洗后【{single_pref}】均播: **{views:,.0f}** | 清洗后目标 CPM: **${target_cpm:,.2f}***")
                 res_budget = calc_budget(views, target_cpm)
                 st.markdown(f"""
                     <div class="metric-card" style="background: linear-gradient(135deg, #0EA5E9, #2563EB);">
@@ -148,40 +162,39 @@ with tab1:
                     </div>
                 """, unsafe_allow_html=True)
 
-# ----- TAB 2: 批量清洗与处理 -----
+# ----- TAB 2: 批量混合清洗 -----
 with tab2:
     with st.container(border=True):
-        st.markdown("### 📂 脏数据智能清洗矩阵导入")
-        st.markdown("<p style='color:#64748B; font-size:14px; margin-top:-10px;'>无论你的表格数据带不带符号、带不带 <b>K/M</b> 单位，系统都会在后台自动清洗纯化并输出标准结果。</p>", unsafe_allow_html=True)
+        st.markdown("### 📂 混合/多平台脏数据智能清洗")
         
-        uploaded_file = st.file_uploader("将包含【均播】和【价格】（或目标CPM）的 Excel / CSV 表格拖拽至此", type=["csv", "xlsx"])
+        uploaded_file = st.file_uploader("将包含混合数据的 Excel / CSV 表格拖拽至此", type=["csv", "xlsx"])
         
         if uploaded_file:
             df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             
-            st.markdown("#### 📥 导入待清洗队列预览")
-            st.dataframe(df, use_container_width=True, height=180)
+            st.markdown("#### 📥 导入原始队列预览")
+            st.dataframe(df, use_container_width=True, height=150)
             
-            # 自动检测表头
             cols = df.columns.tolist()
-            st.markdown("##### 🔍 字段智能映射确诊")
-            col_sel1, col_sel2 = st.columns(2)
+            st.markdown("##### 🔍 智能配置与核心平台提取偏好")
+            col_sel1, col_sel2, col_sel3 = st.columns(3)
             with col_sel1:
-                views_col = st.selectbox("请指定【均播量】对应的列名：", cols, index=cols.index('均播') if '均播' in cols else 0)
+                views_col = st.selectbox("请指定【均播量】所在的列：", cols, index=cols.index('均播') if '均播' in cols else 0)
             with col_sel2:
-                price_col = st.selectbox("请指定【价格/报价】对应的列名（若算预算，请选目标CPM列）：", cols, index=cols.index('价格') if '价格' in cols else (cols.index('目标CPM') if '目标CPM' in cols else 0))
+                price_col = st.selectbox("请指定【价格/报价】所在的列：", cols, index=cols.index('价格') if '价格' in cols else 0)
+            with col_sel3:
+                batch_pref = st.radio("🎯 本次批量计算【核心锁定平台】", ["TT", "IG", "YT"], index=0, horizontal=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🚀 启动数据清洗与全量测算 Pipeline", type="primary"):
-                with st.spinner("智能引擎正在脱敏、转换单位并计算中..."):
+            if st.button("🚀 启动混合多平台全量测算 Pipeline", type="primary"):
+                with st.spinner(f"正在智能剥离并精确提取【{batch_pref}】数据中..."):
                     
                     output_df = df.copy()
                     
-                    # 运行全自动清洗核心
-                    clean_views = output_df[views_col].apply(clean_and_convert_num)
-                    clean_prices = output_df[price_col].apply(clean_and_convert_num)
+                    # 运行多平台条件清洗
+                    clean_views = output_df[views_col].apply(lambda x: parse_platform_value(x, batch_pref))
+                    clean_prices = output_df[price_col].apply(lambda x: parse_platform_value(x, batch_pref))
                     
-                    # 动态判定用户是想算 CPM 还是算预算
                     is_calculating_budget = 'CPM' in price_col.upper() or '目标' in price_col
                     
                     cpm_out = []
@@ -189,22 +202,24 @@ with tab2:
                     
                     for v, p in zip(clean_views, clean_prices):
                         if is_calculating_budget:
-                            cpm_out.append(p) # 输入的本来就是CPM
+                            cpm_out.append(p)
                             budget_out.append(calc_budget(v, p))
                         else:
                             cpm_out.append(calc_cpm(v, p))
-                            budget_out.append(p) # 输入的是价格
+                            budget_out.append(p)
                     
-                    # 将清洗后的真实数值和计算结果追加进最终导出的表里
-                    output_df['系统识别_清洗后均播'] = clean_views
+                    # === 核心改动：两列同时输出清洗后的干净纯数字 ===
+                    output_df[f'清洗后_{batch_pref}_均播'] = clean_views
+                    output_df[f'清洗后_{batch_pref}_价格'] = clean_prices
+                    
                     if is_calculating_budget:
-                        output_df['输出结果_建议预算($)'] = budget_out
+                        output_df[f'输出结果_建议预算($)'] = budget_out
                     else:
-                        output_df['输出结果_智能CPM($)'] = cpm_out
+                        output_df[f'输出结果_智能CPM($)'] = cpm_out
                     
                     st.balloons() 
-                    st.markdown("#### ✨ 清洗计算交付表 (包含全新生成的计算结果列)")
+                    st.markdown(f"#### ✨ 提取成功！均播和价格已全部转换为干净数字：")
                     st.dataframe(output_df, use_container_width=True)
                     
                     csv = output_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 一键导出标准全量报表 (CSV)", data=csv, file_name="cpm_cleaned_output.csv", mime="text/csv")
+                    st.download_button(f"📥 导出【{batch_pref}】专项测算报表 (CSV)", data=csv, file_name=f"cpm_{batch_pref}_output.csv", mime="text/csv")
