@@ -124,13 +124,14 @@ def calc_cpm(views, price): return round((price / views) * 1000, 2) if views > 0
 def calc_budget(views, cpm): return round((views * cpm) / 1000, 2)
 
 # ==========================================
-# 2. 内存动态生成 Excel 模板
+# 2. 内存动态生成全新 Excel 模板（纯净表头，无数据例子）
 # ==========================================
 def generate_template_excel():
+    # 只留表头，不填任何数据例子
     template_data = {
-        "达人名称": ["Influencer_A", "Influencer_B", "Influencer_C"],
-        "均播": ["IG 1100, TT600", "45.5K", "1.2M"],
-        "价格": ["IG: $200, TT: $500", "$1,200", "3500"]
+        "均播": [],
+        "达人报价": [],
+        "cpm预算": []
     }
     df_template = pd.DataFrame(template_data)
     buffer = io.BytesIO()
@@ -167,11 +168,10 @@ with tab1:
             )
             
             st.markdown("<br>", unsafe_allow_html=True)
-            # 强化提示：不仅支持链接，也支持直接写数字
-            link_input = st.text_input("🔗 均播/链接输入框 (可粘贴主页URL，或直接写均播数如 15k, 45000)", value="https://www.tiktok.com/@test")
+            link_input = st.text_input("🔗 均播/链接输入框 (可粘贴主页URL，或直接写均播数如 15k, 45000)", value="IG 1100, TT600")
             
             if "求 CPM" in calc_type:
-                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD，留空则只解析均播)", value="$500")
+                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD，留空则只解析均播)", value="IG: $200, TT: $500")
             else:
                 raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20，留空则只解析均播)", value="$20")
             
@@ -183,14 +183,12 @@ with tab1:
             
             if start_single_calc:
                 with st.spinner("智能引擎动态分析中..."):
-                    # 智能判断第一个框输入的是链接还是纯文本数字
                     val_clean = link_input.strip().lower()
                     if "http://" in val_clean or "https://" in val_clean or ".com" in val_clean:
                         views = fetch_views_from_link(link_input)
                     else:
                         views = parse_text_platform_value(link_input)
                     
-                    # 获取价格/CPM 核心输入
                     has_price = False
                     price_val = 0.0
                     
@@ -203,9 +201,7 @@ with tab1:
                             price_val = parse_text_platform_value(raw_cpm_input)
                             has_price = True
 
-                    # 分流展示结果
                     if views > 0 and not has_price:
-                        # 情况一：有均播，没价格
                         st.info(f"⚙️ **系统已为您成功解析均播量！**")
                         st.markdown(f"""
                             <div class="metric-card" style="background: linear-gradient(135deg, #475569, #334155);">
@@ -216,7 +212,6 @@ with tab1:
                         st.warning("⚠️ 提示：您尚未输入价格/目标CPM，请输入后重新点击计算以获取最终成本数据。")
                         
                     elif views == 0 and has_price:
-                        # 情况二：有价格，没均播
                         st.info(f"⚙️ **系统已为您成功清洗财务数据！**")
                         label_name = "达人合作报价" if "求 CPM" in calc_type else "目标期望 CPM"
                         st.markdown(f"""
@@ -228,7 +223,6 @@ with tab1:
                         st.warning("⚠️ 提示：您尚未提供均播数据或有效的解析链接，请输入后重新点击计算。")
                         
                     elif views > 0 and has_price:
-                        # 情况三：齐全，直接完整测算
                         if "求 CPM" in calc_type:
                             st.write(f"⚙️ *智能识别 ➔ 均播: **{views:,.0f}** | 清洗后报价: **${price_val:,.2f}***")
                             res_cpm = calc_cpm(views, price_val)
@@ -263,11 +257,11 @@ with tab2:
         
         col_desc, col_btn = st.columns([3.5, 1])
         with col_desc:
-            st.markdown("<p style='color:#64748B; font-size:14px; margin-top:5px;'>提示：批量模式专门用来对付表格里如 <code>IG 1100, TT600</code> 这样的混合文字报价。请选择你的核心锁定平台进行切分。</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#64748B; font-size:14px; margin-top:5px;'>提示：批量模式已完美适配全新模板（包含 <code>均播</code>、<code>达人报价</code>、<code>cpm预算</code> 列）。请直接在下方拖拽上传。</p>", unsafe_allow_html=True)
         with col_btn:
             excel_template_bytes = generate_template_excel()
             st.download_button(
-                label="📥 下载标准 Excel 模板",
+                label="📥 下载最新标准 Excel 模板",
                 data=excel_template_bytes,
                 file_name="CPM批量测算标准模板.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -289,7 +283,13 @@ with tab2:
             with col_sel1:
                 views_col = st.selectbox("请指定【均播量】所在的列：", cols, index=cols.index('均播') if '均播' in cols else 0)
             with col_sel2:
-                price_col = st.selectbox("请指定【价格/报价】所在的列：", cols, index=cols.index('价格') if '价格' in cols else 0)
+                if '达人报价' in cols:
+                    def_idx = cols.index('达人报价')
+                elif 'cpm预算' in cols:
+                    def_idx = cols.index('cpm预算')
+                else:
+                    def_idx = 0
+                price_col = st.selectbox("请指定【价格/报价/预算】所在的列：", cols, index=def_idx)
             with col_sel3:
                 batch_pref = st.radio("🎯 本次批量计算【核心锁定平台】", ["TT", "IG", "YT"], index=0, horizontal=True)
             
@@ -302,7 +302,7 @@ with tab2:
                     clean_views = output_df[views_col].apply(lambda x: parse_text_platform_value(x, batch_pref))
                     clean_prices = output_df[price_col].apply(lambda x: parse_text_platform_value(x, batch_pref))
                     
-                    is_calculating_budget = 'CPM' in price_col.upper() or '目标' in price_col
+                    is_calculating_budget = '预算' in price_col or 'CPM' in price_col.upper() or '目标' in price_col
                     
                     cpm_out = []
                     budget_out = []
@@ -316,10 +316,10 @@ with tab2:
                             budget_out.append(p)
                     
                     output_df[f'清洗后_{batch_pref}_均播'] = clean_views
-                    output_df[f'清洗后_{batch_pref}_价格'] = clean_prices
+                    output_df[f'清洗后_{batch_pref}_价格/预算'] = clean_prices
                     
                     if is_calculating_budget:
-                        output_df[f'输出结果_建议预算($)'] = budget_out
+                        output_df[f'输出结果_建议达人报价($)'] = budget_out
                     else:
                         output_df[f'输出结果_智能CPM($)'] = cpm_out
                     
