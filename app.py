@@ -47,9 +47,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 核心智能：免费平替链接爬取 + 文本混合拆分引擎
+# 1. 核心智能网络爬取 & 纯文本清洗函数
 # ==========================================
 def fetch_views_from_link(url):
+    """【单测专用】通过链接抓取均播"""
     if not url: return 0
     url_lower = url.lower()
     try:
@@ -83,13 +84,11 @@ def fetch_views_from_link(url):
         pass
     return 0
 
-def parse_platform_value(text_val, preference):
+def parse_text_platform_value(text_val, preference):
+    """【批量专用】只处理文本拆分，不再去触发网络请求，保证批量表格稳定高效"""
     if pd.isna(text_val): return 0.0
     val_str = str(text_val).strip().upper()
     if not val_str: return 0.0
-    
-    if "HTTP://" in val_str or "HTTPS://" in val_str or ".COM" in val_str:
-        return float(fetch_views_from_link(str(text_val).strip()))
         
     pattern_map = {
         'TT': [r'TT[:\s]*([0-9\.,]+[KM]?)', r'TIKTOK[:\s]*([0-9\.,]+[KM]?)'],
@@ -128,15 +127,12 @@ def calc_budget(views, cpm): return round((views * cpm) / 1000, 2)
 # 2. 内存动态生成 Excel 模板函数
 # ==========================================
 def generate_template_excel():
-    # 创建一个带有示例数据的标准数据框
     template_data = {
-        "达人名称": ["Influencer_A", "Influencer_B", "Influencer_C", "Influencer_D"],
-        "均播": ["IG 1100, TT600", "https://www.tiktok.com/@test", "45.5K", "1.2M"],
-        "价格": ["IG: $200, TT: $500", "400 USD", "$1,200", "3500"]
+        "达人名称": ["Influencer_A", "Influencer_B", "Influencer_C"],
+        "均播": ["IG 1100, TT600", "45.5K", "1.2M"],
+        "价格": ["IG: $200, TT: $500", "$1,200", "3500"]
     }
     df_template = pd.DataFrame(template_data)
-    
-    # 将其写入内存中的字节流
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
         df_template.to_excel(writer, index=False, sheet_name='CPM测算模板')
@@ -148,16 +144,16 @@ def generate_template_excel():
 col_logo, col_title = st.columns([1, 15])
 with col_title:
     st.markdown("# 📈 全球社媒 CPM 智能规划看板")
-    st.markdown("<p style='color:#64748B; font-size:15px; margin-top:-10px;'>跨平台传播成本双向测算系统 · 内置标准导入模板</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#64748B; font-size:15px; margin-top:-10px;'>单测智能链路解析 & 批量表格多平台数据切分纯化系统</p>", unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ==========================================
-# 4. 核心功能标签页 (Tabs)
+# 4. 核心功能标签页
 # ==========================================
-tab1, tab2 = st.tabs(["🎯 单测 · 智能链路透视", "📂 批处理 · 全能数据清洗大表"])
+tab1, tab2 = st.tabs(["🎯 cpm计算器", "📂 批量计算cpm"])
 
-# ----- TAB 1: 快捷单测 -----
+# ----- TAB 1: cpm计算器 -----
 with tab1:
     with st.container(border=True):
         col_left, col_right = st.columns([1.1, 0.9], gap="large")
@@ -171,52 +167,61 @@ with tab1:
             )
             
             st.markdown("<br>", unsafe_allow_html=True)
-            single_pref = st.selectbox("🎯 锁定目标平台：", ["TT", "IG", "YT"], index=0)
-            
-            raw_views_input = st.text_input("👁️ 均播输入 (支持链接或混合文本)", value="IG 1100, TT600")
-            
-            with st.spinner("正在智能解析输入源..."):
-                views = parse_platform_value(raw_views_input, single_pref)
+            link_input = st.text_input("🔗 动态解析链接 (粘贴网红主页或单条视频 URL)", value="https://www.tiktok.com/@test")
             
             if "求 CPM" in calc_type:
-                raw_price_input = st.text_input("💰 达人合作报价", value="IG: $200, TT: $500")
-                price = parse_platform_value(raw_price_input, single_pref)
+                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD 等)", value="$500")
             else:
-                raw_cpm_input = st.text_input("🎯 目标期望 CPM", value="$20")
-                target_cpm = parse_platform_value(raw_cpm_input, single_pref)
+                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20 等)", value="$20")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            # === 新增：单测确认按钮 ===
+            start_single_calc = st.button("🚀 开始解析并计算 CPM", type="primary", use_container_width=True)
                     
         with col_right:
             st.markdown("### 📊 测算交付结果")
-            if "求 CPM" in calc_type:
-                st.write(f"⚙️ *系统识别 ➔ 清洗后均播: **{views:,.0f}** | 清洗后报价: **${price:,.2f}***")
-                res_cpm = calc_cpm(views, price)
-                st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-card-title">💵 Calculated CPM (千次展示成本)</div>
-                        <div class="metric-card-value">${res_cpm:,}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+            
+            # 只有当用户主动点击了“开始解析并计算 CPM”时，才在右侧渲染结果
+            if start_single_calc:
+                with st.spinner("正在调度接口提取链接并清洗计算中..."):
+                    views = fetch_views_from_link(link_input)
+                    
+                    if "求 CPM" in calc_type:
+                        price = parse_text_platform_value(raw_price_input, 'TT')
+                        st.write(f"⚙️ *智能识别 ➔ 链接解析均播: **{views:,.0f}** | 清洗后报价: **${price:,.2f}***")
+                        res_cpm = calc_cpm(views, price)
+                        st.markdown(f"""
+                            <div class="metric-card">
+                                <div class="metric-card-title">💵 Calculated CPM (千次展示成本)</div>
+                                <div class="metric-card-value">${res_cpm:,}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        target_cpm = parse_text_platform_value(raw_cpm_input, 'TT')
+                        st.write(f"⚙️ *智能识别 ➔ 链接解析均播: **{views:,.0f}** | 清洗后目标 CPM: **${target_cpm:,.2f}***")
+                        res_budget = calc_budget(views, target_cpm)
+                        st.markdown(f"""
+                            <div class="metric-card" style="background: linear-gradient(135deg, #0EA5E9, #2563EB);">
+                                <div class="metric-card-title">💰 Recommended Budget (建议匹配预算)</div>
+                                <div class="metric-card-value">${res_budget:,}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
             else:
-                st.write(f"⚙️ *系统识别 ➔ 清洗后均播: **{views:,.0f}** | 清洗后目标 CPM: **${target_cpm:,.2f}***")
-                res_budget = calc_budget(views, target_cpm)
-                st.markdown(f"""
-                    <div class="metric-card" style="background: linear-gradient(135deg, #0EA5E9, #2563EB);">
-                        <div class="metric-card-title">💰 Recommended Budget (建议匹配预算)</div>
-                        <div class="metric-card-value">${res_budget:,}</div>
+                st.markdown("""
+                    <div style="border: 2px dashed #E2E8F0; border-radius: 12px; padding: 40px; text-align: center; color: #94A3B8; margin-top: 15px;">
+                        💡 请在左侧配置完成后，点击“开始解析并计算 CPM”按钮查看结果
                     </div>
                 """, unsafe_allow_html=True)
 
-# ----- TAB 2: 批量混合清洗 -----
+# ----- TAB 2: 批量计算cpm -----
 with tab2:
     with st.container(border=True):
-        st.markdown("### 📂 智能全矩阵导入")
+        st.markdown("### 📂 混合/多平台脏数据智能清洗")
         
-        # === 核心增加：优雅的横向排版，左边是说明，右边是一键下载模板按钮 ===
         col_desc, col_btn = st.columns([3.5, 1])
         with col_desc:
-            st.markdown("<p style='color:#64748B; font-size:14px; margin-top:5px;'>提示：为保证系统精准识别，建议首次使用前先下载标准格式模板。填好数据后直接拖拽到下方即可。</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#64748B; font-size:14px; margin-top:5px;'>提示：批量模式专门用来对付表格里如 <code>IG 1100, TT600</code> 这样的混合文字报价。请选择你的核心锁定平台进行切分。</p>", unsafe_allow_html=True)
         with col_btn:
-            # 生成并绑定 Excel 模板字节数据
             excel_template_bytes = generate_template_excel()
             st.download_button(
                 label="📥 下载标准 Excel 模板",
@@ -227,7 +232,7 @@ with tab2:
             )
         
         st.markdown("---")
-        uploaded_file = st.file_uploader("将填充好数据的 Excel / CSV 表格拖拽至此", type=["csv", "xlsx"])
+        uploaded_file = st.file_uploader("将包含混合数据的 Excel / CSV 表格拖拽至此", type=["csv", "xlsx"])
         
         if uploaded_file:
             df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
@@ -239,25 +244,27 @@ with tab2:
             st.markdown("##### 🔍 智能配置与核心平台提取偏好")
             col_sel1, col_sel2, col_sel3 = st.columns(3)
             with col_sel1:
-                views_col = st.selectbox("请指定【均播量/链接】所在的列：", cols, index=cols.index('均播') if '均播' in cols else (cols.index('链接') if '链接' in cols else 0))
+                views_col = st.selectbox("请指定【均播量】所在的列：", cols, index=cols.index('均播') if '均播' in cols else 0)
             with col_sel2:
                 price_col = st.selectbox("请指定【价格/报价】所在的列：", cols, index=cols.index('价格') if '价格' in cols else 0)
             with col_sel3:
                 batch_pref = st.radio("🎯 本次批量计算【核心锁定平台】", ["TT", "IG", "YT"], index=0, horizontal=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🚀 启动全量清洗与测算", type="primary"):
-                with st.spinner(f"正在智能识别、多线程解析与计算中..."):
+            # 批量测算确认按钮
+            if st.button("🚀 确认数据无误，启动批量计算", type="primary"):
+                with st.spinner(f"正在智能剥离并精确提取【{batch_pref}】数据中..."):
                     
                     output_df = df.copy()
                     
-                    clean_views = output_df[views_col].apply(lambda x: parse_platform_value(x, batch_pref))
-                    clean_prices = output_df[price_col].apply(lambda x: parse_platform_value(x, batch_pref))
+                    clean_views = output_df[views_col].apply(lambda x: parse_text_platform_value(x, batch_pref))
+                    clean_prices = output_df[price_col].apply(lambda x: parse_text_platform_value(x, batch_pref))
                     
                     is_calculating_budget = 'CPM' in price_col.upper() or '目标' in price_col
                     
                     cpm_out = []
                     budget_out = []
+                    
                     for v, p in zip(clean_views, clean_prices):
                         if is_calculating_budget:
                             cpm_out.append(p)
@@ -275,7 +282,7 @@ with tab2:
                         output_df[f'输出结果_智能CPM($)'] = cpm_out
                     
                     st.balloons() 
-                    st.markdown(f"#### ✨ 测算交付大表：")
+                    st.markdown(f"#### ✨ 提取成功！已锁定【{batch_pref}】数据并转换为标准纯数字：")
                     st.dataframe(output_df, use_container_width=True)
                     
                     csv = output_df.to_csv(index=False).encode('utf-8')
