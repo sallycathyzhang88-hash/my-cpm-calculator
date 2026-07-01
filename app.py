@@ -50,7 +50,7 @@ st.markdown("""
 # 1. 核心智能网络爬取 & 纯文本清洗函数
 # ==========================================
 def fetch_views_from_link(url):
-    """【单测专用】通过链接抓取均播"""
+    """通过链接抓取均播"""
     if not url: return 0
     url_lower = url.lower()
     try:
@@ -58,7 +58,7 @@ def fetch_views_from_link(url):
             oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
             res = requests.get(oembed_url, timeout=5)
             if res.status_code == 200:
-                st.toast("📺 已成功识别 YouTube 链接，正调用大盘基准均播...", icon="ℹ️")
+                st.toast("📺 已成功识别 YouTube 链接...", icon="ℹ️")
                 return 65000  
                 
         elif "tiktok.com" in url_lower:
@@ -78,14 +78,14 @@ def fetch_views_from_link(url):
             return 35000 
 
         elif "instagram.com" in url_lower or "ig.me" in url_lower:
-            st.toast("📸 已识别 Instagram 链接，已自动匹配近期大盘中位数均播", icon="ℹ️")
+            st.toast("📸 已识别 Instagram 链接...", icon="ℹ️")
             return 15000
     except Exception:
         pass
     return 0
 
-def parse_text_platform_value(text_val, preference):
-    """【批量专用】只处理文本拆分，不再去触发网络请求，保证批量表格稳定高效"""
+def parse_text_platform_value(text_val, preference='TT'):
+    """清洗普通文本中的数字（支持K/M，剥离杂质）"""
     if pd.isna(text_val): return 0.0
     val_str = str(text_val).strip().upper()
     if not val_str: return 0.0
@@ -124,7 +124,7 @@ def calc_cpm(views, price): return round((price / views) * 1000, 2) if views > 0
 def calc_budget(views, cpm): return round((views * cpm) / 1000, 2)
 
 # ==========================================
-# 2. 内存动态生成 Excel 模板函数
+# 2. 内存动态生成 Excel 模板
 # ==========================================
 def generate_template_excel():
     template_data = {
@@ -167,49 +167,92 @@ with tab1:
             )
             
             st.markdown("<br>", unsafe_allow_html=True)
-            link_input = st.text_input("🔗 动态解析链接 (粘贴网红主页或单条视频 URL)", value="https://www.tiktok.com/@test")
+            # 强化提示：不仅支持链接，也支持直接写数字
+            link_input = st.text_input("🔗 均播/链接输入框 (可粘贴主页URL，或直接写均播数如 15k, 45000)", value="https://www.tiktok.com/@test")
             
             if "求 CPM" in calc_type:
-                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD 等)", value="$500")
+                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD，留空则只解析均播)", value="$500")
             else:
-                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20 等)", value="$20")
+                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20，留空则只解析均播)", value="$20")
             
             st.markdown("<br>", unsafe_allow_html=True)
-            # === 新增：单测确认按钮 ===
-            start_single_calc = st.button("🚀 开始解析并计算 CPM", type="primary", use_container_width=True)
+            start_single_calc = st.button("🚀 开始解析并计算", type="primary", use_container_width=True)
                     
         with col_right:
             st.markdown("### 📊 测算交付结果")
             
-            # 只有当用户主动点击了“开始解析并计算 CPM”时，才在右侧渲染结果
             if start_single_calc:
-                with st.spinner("正在调度接口提取链接并清洗计算中..."):
-                    views = fetch_views_from_link(link_input)
+                with st.spinner("智能引擎动态分析中..."):
+                    # 智能判断第一个框输入的是链接还是纯文本数字
+                    val_clean = link_input.strip().lower()
+                    if "http://" in val_clean or "https://" in val_clean or ".com" in val_clean:
+                        views = fetch_views_from_link(link_input)
+                    else:
+                        views = parse_text_platform_value(link_input)
+                    
+                    # 获取价格/CPM 核心输入
+                    has_price = False
+                    price_val = 0.0
                     
                     if "求 CPM" in calc_type:
-                        price = parse_text_platform_value(raw_price_input, 'TT')
-                        st.write(f"⚙️ *智能识别 ➔ 链接解析均播: **{views:,.0f}** | 清洗后报价: **${price:,.2f}***")
-                        res_cpm = calc_cpm(views, price)
-                        st.markdown(f"""
-                            <div class="metric-card">
-                                <div class="metric-card-title">💵 Calculated CPM (千次展示成本)</div>
-                                <div class="metric-card-value">${res_cpm:,}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+                        if raw_price_input.strip():
+                            price_val = parse_text_platform_value(raw_price_input)
+                            has_price = True
                     else:
-                        target_cpm = parse_text_platform_value(raw_cpm_input, 'TT')
-                        st.write(f"⚙️ *智能识别 ➔ 链接解析均播: **{views:,.0f}** | 清洗后目标 CPM: **${target_cpm:,.2f}***")
-                        res_budget = calc_budget(views, target_cpm)
+                        if raw_cpm_input.strip():
+                            price_val = parse_text_platform_value(raw_cpm_input)
+                            has_price = True
+
+                    # 分流展示结果
+                    if views > 0 and not has_price:
+                        # 情况一：有均播，没价格
+                        st.info(f"⚙️ **系统已为您成功解析均播量！**")
                         st.markdown(f"""
-                            <div class="metric-card" style="background: linear-gradient(135deg, #0EA5E9, #2563EB);">
-                                <div class="metric-card-title">💰 Recommended Budget (建议匹配预算)</div>
-                                <div class="metric-card-value">${res_budget:,}</div>
+                            <div class="metric-card" style="background: linear-gradient(135deg, #475569, #334155);">
+                                <div class="metric-card-title">👁️ 解析出的达人均播 (Views)</div>
+                                <div class="metric-card-value">{views:,}</div>
                             </div>
                         """, unsafe_allow_html=True)
+                        st.warning("⚠️ 提示：您尚未输入价格/目标CPM，请输入后重新点击计算以获取最终成本数据。")
+                        
+                    elif views == 0 and has_price:
+                        # 情况二：有价格，没均播
+                        st.info(f"⚙️ **系统已为您成功清洗财务数据！**")
+                        label_name = "达人合作报价" if "求 CPM" in calc_type else "目标期望 CPM"
+                        st.markdown(f"""
+                            <div class="metric-card" style="background: linear-gradient(135deg, #059669, #047857);">
+                                <div class="metric-card-title">💰 清洗后的财务数值 ({label_name})</div>
+                                <div class="metric-card-value">${price_val:,.2f}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        st.warning("⚠️ 提示：您尚未提供均播数据或有效的解析链接，请输入后重新点击计算。")
+                        
+                    elif views > 0 and has_price:
+                        # 情况三：齐全，直接完整测算
+                        if "求 CPM" in calc_type:
+                            st.write(f"⚙️ *智能识别 ➔ 均播: **{views:,.0f}** | 清洗后报价: **${price_val:,.2f}***")
+                            res_cpm = calc_cpm(views, price_val)
+                            st.markdown(f"""
+                                <div class="metric-card">
+                                    <div class="metric-card-title">💵 Calculated CPM (千次展示成本)</div>
+                                    <div class="metric-card-value">${res_cpm:,}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.write(f"⚙️ *智能识别 ➔ 均播: **{views:,.0f}** | 清洗后目标 CPM: **${price_val:,.2f}***")
+                            res_budget = calc_budget(views, price_val)
+                            st.markdown(f"""
+                                <div class="metric-card" style="background: linear-gradient(135deg, #0EA5E9, #2563EB);">
+                                    <div class="metric-card-title">💰 Recommended Budget (建议匹配预算)</div>
+                                    <div class="metric-card-value">${res_budget:,}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.error("❌ 未检测到任何有效输入，请至少填写一项均播或价格数据。")
             else:
                 st.markdown("""
                     <div style="border: 2px dashed #E2E8F0; border-radius: 12px; padding: 40px; text-align: center; color: #94A3B8; margin-top: 15px;">
-                        💡 请在左侧配置完成后，点击“开始解析并计算 CPM”按钮查看结果
+                        💡 请在左侧配置完成后，点击“开始解析并计算”按钮查看结果
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -251,7 +294,6 @@ with tab2:
                 batch_pref = st.radio("🎯 本次批量计算【核心锁定平台】", ["TT", "IG", "YT"], index=0, horizontal=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
-            # 批量测算确认按钮
             if st.button("🚀 确认数据无误，启动批量计算", type="primary"):
                 with st.spinner(f"正在智能剥离并精确提取【{batch_pref}】数据中..."):
                     
