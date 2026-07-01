@@ -124,10 +124,9 @@ def calc_cpm(views, price): return round((price / views) * 1000, 2) if views > 0
 def calc_budget(views, cpm): return round((views * cpm) / 1000, 2)
 
 # ==========================================
-# 2. 内存动态生成全新 Excel 模板（纯净表头，无数据例子）
+# 2. 内存动态生成全新 Excel 模板（纯净空白）
 # ==========================================
 def generate_template_excel():
-    # 只留表头，不填任何数据例子
     template_data = {
         "均播": [],
         "达人报价": [],
@@ -140,11 +139,11 @@ def generate_template_excel():
     return buffer.getvalue()
 
 # ==========================================
-# 3. 顶栏设计 (Header)
+# 3. 顶栏设计 (Header 改为 cpm计算器)
 # ==========================================
 col_logo, col_title = st.columns([1, 15])
 with col_title:
-    st.markdown("# 📈 全球社媒 CPM 智能规划看板")
+    st.markdown("# 📈 cpm计算器")
     st.markdown("<p style='color:#64748B; font-size:15px; margin-top:-10px;'>单测智能链路解析 & 批量表格多平台数据切分纯化系统</p>", unsafe_allow_html=True)
 
 st.markdown("---")
@@ -160,7 +159,7 @@ with tab1:
         col_left, col_right = st.columns([1.1, 0.9], gap="large")
         
         with col_left:
-            st.markdown("### 📋 策略与输入")
+            st.markdown("### 📋 单个计算")
             calc_type = st.segmented_control(
                 "测算模式选择",
                 options=["求 CPM (已知报价)", "求预算 (已知目标CPM)"],
@@ -168,26 +167,31 @@ with tab1:
             )
             
             st.markdown("<br>", unsafe_allow_html=True)
-            link_input = st.text_input("🔗 均播/链接输入框 (可粘贴主页URL，或直接写均播数如 15k, 45000)", value="IG 1100, TT600")
+            
+            # === 彻底分开：均播框 与 链接框 ===
+            views_input = st.text_input("🔢 达人均播 (输入具体数字，如 15k, 45000，不使用链接时填此处)", value="")
+            link_input = st.text_input("🔗 动态解析链接 (粘贴网红主页或单条视频 URL，不使用数字时填此处)", value="")
             
             if "求 CPM" in calc_type:
-                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD，留空则只解析均播)", value="IG: $200, TT: $500")
+                raw_price_input = st.text_input("💰 达人合作报价 (支持输入 $500, 500 USD，留空则只解析均播)", value="")
             else:
-                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20，留空则只解析均播)", value="$20")
+                raw_cpm_input = st.text_input("🎯 目标期望 CPM (支持输入 $20，留空则只解析均播)", value="")
             
             st.markdown("<br>", unsafe_allow_html=True)
             start_single_calc = st.button("🚀 开始解析并计算", type="primary", use_container_width=True)
                     
         with col_right:
-            st.markdown("### 📊 测算交付结果")
+            st.markdown("### 📊 计算结果")
             
             if start_single_calc:
                 with st.spinner("智能引擎动态分析中..."):
-                    val_clean = link_input.strip().lower()
-                    if "http://" in val_clean or "https://" in val_clean or ".com" in val_clean:
+                    # === 优先采用：如果填了链接优先解析链接，否则解析数字输入框 ===
+                    if link_input.strip():
                         views = fetch_views_from_link(link_input)
+                    elif views_input.strip():
+                        views = parse_text_platform_value(views_input)
                     else:
-                        views = parse_text_platform_value(link_input)
+                        views = 0.0
                     
                     has_price = False
                     price_val = 0.0
@@ -242,7 +246,7 @@ with tab1:
                                 </div>
                             """, unsafe_allow_html=True)
                     else:
-                        st.error("❌ 未检测到任何有效输入，请至少填写一项均播或价格数据。")
+                        st.error("❌ 未检测到任何有效输入，请在均播或链接框中至少填写一项。")
             else:
                 st.markdown("""
                     <div style="border: 2px dashed #E2E8F0; border-radius: 12px; padding: 40px; text-align: center; color: #94A3B8; margin-top: 15px;">
